@@ -1,0 +1,13 @@
+# Core serving + benchmarking deps. Pin versions as you go for reproducibility.
+# (Install vllm per your platform: vllm-metal on M-series, or stock vllm on NVIDIA.)
+vllm
+torch
+transformers
+fastapi
+uvicorn
+httpx
+aiohttp
+numpy
+pandas
+matplotlib
+prometheus-client
