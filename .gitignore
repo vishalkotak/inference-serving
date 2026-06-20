@@ -1,0 +1,45 @@
+# --- secrets ---
+.env
+*.key
+*.pem
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+*.egg-info/
+
+# --- model weights / datasets (never commit — gigabytes) ---
+models/
+checkpoints/
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+*.onnx
+data/
+datasets/
+.cache/
+huggingface/
+
+# --- profiler traces / large run artifacts (commit the writeup + a screenshot instead) ---
+*.qdrep
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+traces/
+*.trace.json
+profiles/
+
+# Keep result writeups and chart PNGs (portfolio). Ignore bulky raw logs only.
+results/**/*.log
+results/**/raw/
+
+# --- os / editor ---
+.DS_Store
+.idea/
+.vscode/
