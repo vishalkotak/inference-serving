@@ -11,6 +11,15 @@ torch = "^2.13.0"
 numpy = "^2.5.1"
 
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+
+[tool.pytest.ini_options]
+# modules import each other as `shared.*` / `vllm_replica.*`, so the package
+# directory itself is the import root
+pythonpath = ["inference_comparison"]
+testpaths = ["tests"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
