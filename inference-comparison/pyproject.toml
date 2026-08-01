@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "inference-comparison"
+version = "0.1.0"
+description = ""
+authors = ["Vishal Kotak <vishal.sanjiv.kotak@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+torch = "^2.13.0"
+numpy = "^2.5.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
