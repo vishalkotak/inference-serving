@@ -1,18 +1,15 @@
-"""
-shared/regex_fsm.py
-===================
-A tiny regex -> NFA (Thompson) -> DFA compiler over the BYTE alphabet (0..255).
-Neutral infrastructure used by BOTH structured-decoding components -- mirroring
-how real vLLM and SGLang both sit on a shared grammar backend (xgrammar /
-outlines) and differ only in how they *drive* the automaton.
+"""regex -> NFA (Thompson) -> DFA over the byte alphabet (0..255).
 
-Supported syntax (a genuine useful subset):
-    literals, '.', char classes [a-z0-9_], shortcuts \\d \\w \\s,
-    quantifiers * + ?, alternation |, groups ( ).
+Shared by both structured-decoding components, the same way vLLM and SGLang both
+sit on a grammar backend like xgrammar or outlines and differ only in how they
+drive the automaton.
 
-The DFA exposes exactly what a constrained decoder needs:
-    allowed_bytes(state) -> set[int]      # legal next tokens
-    is_accepting(state)  -> bool          # may stop here
+Supported syntax: literals, '.', char classes [a-z0-9_], shortcuts \\d \\w \\s,
+quantifiers * + ?, alternation |, groups ( ).
+
+The DFA exposes what a constrained decoder needs:
+    allowed_bytes(state) -> set[int]
+    is_accepting(state)  -> bool
     step(state, byte)    -> state | None
 """
 from __future__ import annotations
@@ -25,7 +22,6 @@ WORD = (frozenset(range(ord("a"), ord("z") + 1))
 SPACE = frozenset(ord(c) for c in " \t\n\r")
 
 
-# ----------------------------- NFA ---------------------------------------- #
 class _NFA:
     def __init__(self):
         self.trans: dict[int, list[tuple[frozenset | None, int]]] = {}
@@ -38,7 +34,7 @@ class _NFA:
         return s
 
     def add(self, src: int, symbols, dst: int) -> None:
-        # symbols is None for epsilon, else a frozenset of byte values
+        # symbols is None for epsilon, otherwise a frozenset of byte values
         self.trans[src].append((symbols, dst))
 
 
@@ -49,7 +45,6 @@ class _Frag:
         self.start, self.accept = start, accept
 
 
-# --------------------------- parser --------------------------------------- #
 class _Parser:
     def __init__(self, pattern: str, nfa: _NFA):
         self.p = pattern
@@ -159,7 +154,6 @@ class _Parser:
         return FULL - fs if negate else fs
 
 
-# ---------------------- subset construction ------------------------------- #
 class RegexFSM:
     def __init__(self, pattern: str):
         nfa = _NFA()
@@ -189,7 +183,7 @@ class RegexFSM:
             cur = order[i]
             if self._accept_nfa in cur:
                 self.accepting.add(i)
-            # group by byte -> reachable nfa states
+            # group by byte, collecting the reachable NFA states
             for b in range(256):
                 move = set()
                 for s in cur:
@@ -207,7 +201,6 @@ class RegexFSM:
             i += 1
         self.start = 0
 
-    # ---- decoder-facing API --------------------------------------------- #
     def allowed_bytes(self, state: int) -> set[int]:
         return set(self.trans[state].keys())
 

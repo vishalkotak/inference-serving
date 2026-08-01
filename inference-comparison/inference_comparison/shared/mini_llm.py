@@ -1,21 +1,13 @@
-"""
-shared/mini_llm.py
-==================
-A *tiny*, randomly-initialised decoder-only Transformer used by BOTH the
-vLLM-replica and the SGLang-replica.
+"""Tiny randomly-initialised decoder-only Transformer, shared by both replicas.
 
-There is deliberately **no model download and no external tokenizer**:
-    * weights are random (torch default init) + a fixed seed for reproducibility,
-    * the tokenizer is byte-level (vocab = 256, id == byte value).
+No model download and no external tokenizer: weights are random with a fixed seed,
+and the tokenizer is byte-level (vocab 256, id == byte value). The generated text is
+meaningless, which is the point; what gets tested here is serving machinery, not
+model quality.
 
-The generated *text* is therefore meaningless. That is fine: these projects
-replicate the *serving-engine mechanisms*, not model quality. Every mechanism
-is validated on its own terms (see each demo's asserts).
-
-The one important design choice: attention is delegated to a pluggable
-`AttentionBackend`. The SAME `TinyLLM` runs under vLLM's PagedAttention backend
-and under SGLang's RadixAttention backend -- exactly like a real engine swapping
-its KV-cache/attention backend under a fixed model.
+Attention is delegated to a pluggable AttentionBackend so the same TinyLLM can run
+under a paged backend or a radix backend, the way a real engine swaps its KV cache
+implementation under a fixed model.
 """
 from __future__ import annotations
 import math
@@ -27,14 +19,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# --------------------------------------------------------------------------- #
-# Tokenizer (byte-level, no files)                                            #
-# --------------------------------------------------------------------------- #
 class ByteTokenizer:
-    """Maps a str <-> list[int] using raw UTF-8 bytes. vocab_size == 256.
+    """str <-> list[int] over raw UTF-8 bytes.
 
-    Token id 0 doubles as our EOS marker in demos (the NUL byte is never
-    produced from normal text, so it is safe to reserve)."""
+    Token id 0 doubles as EOS; the NUL byte never comes out of normal text, so
+    it is safe to reserve.
+    """
     vocab_size = 256
     eos_id = 0
 
@@ -45,9 +35,6 @@ class ByteTokenizer:
         return bytes(i for i in ids if i != self.eos_id).decode("utf-8", "replace")
 
 
-# --------------------------------------------------------------------------- #
-# Config                                                                       #
-# --------------------------------------------------------------------------- #
 @dataclass
 class TinyLLMConfig:
     vocab_size: int = 256
@@ -63,16 +50,12 @@ class TinyLLMConfig:
         return self.n_head * self.d_head
 
 
-# --------------------------------------------------------------------------- #
-# Attention backend protocol                                                   #
-# --------------------------------------------------------------------------- #
 @dataclass
 class SeqContext:
-    """Per-sequence bookkeeping passed into the model on every forward step.
+    """Per-sequence bookkeeping passed to the model on every forward step.
 
-    seq_id       : unique id of the running sequence
-    start_pos    : absolute position of the FIRST token in this step's input
-                   (== number of tokens already committed to the KV cache)
+    start_pos is the absolute position of the first token in this step's input,
+    which is also how many tokens are already committed to the KV cache.
     """
     seq_id: int
     start_pos: int
@@ -80,33 +63,23 @@ class SeqContext:
 
 
 class AttentionBackend(Protocol):
-    """A backend owns the KV cache and computes attention.
+    """Owns the KV cache and computes attention.
 
-    Contract for `attention`:
-      * inputs q,k,v have shape [T, n_head, d_head]  (T = tokens in this step)
-      * the backend must (1) append k,v for these T tokens to its cache for
-        `ctx.seq_id` at `layer_idx`, then (2) return attention output of shape
-        [T, d_model], where each of the T query rows attends causally over the
-        full history (cached prefix + the new tokens up to and including itself).
+    q, k, v arrive as [T, n_head, d_head] for the T tokens in this step. The
+    backend stores k/v under (ctx.seq_id, layer_idx), then returns [T, d_model]
+    where each query attends causally over the cached prefix plus the new tokens
+    up to and including itself.
     """
     def attention(self, layer_idx: int, q: torch.Tensor, k: torch.Tensor,
                   v: torch.Tensor, ctx: SeqContext) -> torch.Tensor: ...
 
 
-# --------------------------------------------------------------------------- #
-# The shared attention math (used by every backend after it gathers K/V)       #
-# --------------------------------------------------------------------------- #
 def causal_attention(q: torch.Tensor, k_all: torch.Tensor, v_all: torch.Tensor,
                      n_prefix: int) -> torch.Tensor:
-    """Multi-head causal attention.
+    """Multi-head causal attention, run by every backend once it has gathered K/V.
 
-    q      : [T, H, D]   queries for the T new tokens
-    k_all  : [P+T, H, D] keys for prefix (P) + new (T) tokens
-    v_all  : [P+T, H, D]
-    n_prefix (P): number of cached prefix tokens (query i may see all P of them
-                  plus new tokens j <= i).
-
-    Returns [T, H*D].
+    q is [T, H, D]; k_all and v_all are [P+T, H, D] with P cached prefix tokens.
+    Query i sees all P prefix tokens plus new tokens j <= i. Returns [T, H*D].
     """
     T, H, D = q.shape
     L = k_all.shape[0]
@@ -130,9 +103,6 @@ def causal_attention(q: torch.Tensor, k_all: torch.Tensor, v_all: torch.Tensor,
     return out.permute(1, 0, 2).reshape(T, H * D)
 
 
-# --------------------------------------------------------------------------- #
-# Model                                                                        #
-# --------------------------------------------------------------------------- #
 class TinyBlock(nn.Module):
     def __init__(self, cfg: TinyLLMConfig):
         super().__init__()
@@ -172,8 +142,8 @@ class TinyLLM(nn.Module):
     @torch.no_grad()
     def forward(self, input_ids: list[int], backend: AttentionBackend,
                 ctx: SeqContext) -> torch.Tensor:
-        """Run one step (prefill: T>1, or decode: T==1). Returns logits for the
-        LAST position only -- that is all a serving engine samples from."""
+        """One step, prefill (T>1) or decode (T==1). Returns logits for the last
+        position only, which is all a sampler needs."""
         ids = torch.tensor(input_ids, dtype=torch.long)
         pos = torch.arange(ctx.start_pos, ctx.start_pos + len(input_ids))
         h = self.tok_emb(ids) + self.pos_emb(pos)
@@ -183,9 +153,6 @@ class TinyLLM(nn.Module):
         return self.lm_head(h[-1])   # [vocab]
 
 
-# --------------------------------------------------------------------------- #
-# Sampling helpers                                                             #
-# --------------------------------------------------------------------------- #
 def greedy(logits: torch.Tensor) -> int:
     return int(torch.argmax(logits).item())
 
@@ -198,12 +165,11 @@ def sample(logits: torch.Tensor, temperature: float = 1.0,
     return int(torch.multinomial(probs, 1, generator=generator).item())
 
 
-# --------------------------------------------------------------------------- #
-# A trivial reference backend (no paging / no radix) used only to validate     #
-# that the fancy backends produce identical numbers.                           #
-# --------------------------------------------------------------------------- #
 class DenseBackend:
-    """Stores KV in plain per-(seq,layer) python lists. Ground truth."""
+    """Reference backend: KV in plain per-(seq, layer) tensors, no paging.
+
+    Exists so the paged and radix backends can be checked against it.
+    """
     def __init__(self):
         self.k: dict = {}   # (seq,layer) -> Tensor [N,H,D]
         self.v: dict = {}
