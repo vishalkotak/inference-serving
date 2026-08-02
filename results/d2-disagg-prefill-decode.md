@@ -1,7 +1,7 @@
-# Day 02 — Disaggregated prefill/decode on 2× T4: partial result
+# Day 02: Disaggregated prefill/decode on 2× T4, partial result
 
-**Goal:** reproduce the llm-d disaggregated architecture's core mechanism — prefill builds the KV
-cache on one GPU, decode consumes it on another — on free hardware, without Kubernetes.
+**Goal:** reproduce the llm-d disaggregated architecture's core mechanism (prefill builds the KV
+cache on one GPU, decode consumes it on another) on free hardware, without Kubernetes.
 
 **Outcome: the pipeline stands up end to end, but the KV handoff does not complete.** The final run
 returns HTTP 200 with a coherent completion while both engines log `LMCache hit tokens: 0`. That is
@@ -21,12 +21,13 @@ a correct-looking answer.**
 | Proxy | vLLM's own `disagg_proxy_server.py` (a hand-rolled one is what caused failure #2 below) |
 
 Launch order matters: **decoder first** (it binds the PD ports), then prefiller (it dials), then
-proxy. Both at `--gpu-memory-utilization 0.6` — 0.8 leaves no room for LMCache's 1 GiB PD buffer.
+proxy. Both at `--gpu-memory-utilization 0.6`, since 0.8 leaves no room for LMCache's 1 GiB PD
+buffer.
 
 ## What worked
 
 - Two independent vLLM engines, one per T4, `GPU KV cache size: 317,952 tokens` each.
-- LMCache PD config **accepted** after the schema migration — no `Unknown configuration key`
+- LMCache PD config **accepted** after the schema migration: no `Unknown configuration key`
   warnings, dump shows `enable_pd: True`, `pd_role`, `transfer_channel: nixl`, all three ports.
 - NIXL initialises on both sides: `Backend UCX was instantiated`, `Initialized NIXL agent`, and the
   receiver reaches `Starting async initialization loop (nixl_channel.py:344)`.
@@ -47,7 +48,7 @@ LMCache INFO: Reqid: cmpl-84c603df084e4c86-0, Total tokens 2007,
               Inference Engine computed tokens: 0, LMCache hit tokens: 0, need to load: 0
 ```
 
-Both agents init, the async channel starts, and the sender→receiver handshake never completes — so
+Both agents init, the async channel starts, and the sender→receiver handshake never completes, so
 nothing is staged, and `hit tokens` stays 0 on both ends.
 
 ## Findings
@@ -58,18 +59,19 @@ nothing is staged, and `hit tokens` stays 0 on both ends.
   the output text useless as a verification signal. The win condition is the decoder logging
   `LMCache hit tokens: ~2000, need to load: ~2000` with no `unhealthy`.
 - **`chunk_size: 256` sets a floor on what can transfer at all.** The first tests used
-  `"The capital of France is"` — 5 tokens, below one chunk, so LMCache stages nothing and reports
-  `hit tokens: 0` even on a fully working setup. Indistinguishable from real failure unless you know
-  the threshold. vLLM's own disagg benchmark uses `--random-input-len 7500` for exactly this reason.
+  `"The capital of France is"`, which is 5 tokens, below one chunk, so LMCache stages nothing and
+  reports `hit tokens: 0` even on a fully working setup. Indistinguishable from real failure unless
+  you know the threshold. vLLM's own disagg benchmark uses `--random-input-len 7500` for exactly
+  this reason.
 - **`kv_transfer_params: None` is the tell for a broken hand-rolled proxy.** A two-stage proxy
   (`max_tokens=1` to prefill, then forward to decode) returned a correct answer with
-  `kv_transfer_params: None` — decode ignored the handoff entirely. vLLM ships the correct proxy;
+  `kv_transfer_params: None`. Decode ignored the handoff entirely. vLLM ships the correct proxy;
   the coordination it does is not obvious enough to reimplement casually.
 - **PD mode is designed for two machines.** `pd_peer_host` expects a different box. On one host,
   sender and receiver share `localhost` and the same three ports, and that's where the async init
   loop stalls. Related and unresolved: the receiver's log contains
   `assert config.pd_peer_host is not None`, even though omitting that key is precisely what makes it
-  the listener — see the [notes](../notes/d2-lmcache-pd-schema-migration.md).
+  the listener. See the [notes](../notes/d2-lmcache-pd-schema-migration.md).
 - **`kill -9` on a vLLM process does not free its GPU memory.** Killed workers strand CUDA
   allocations; the next launch OOMs at `Free memory on device cuda:0 (3.7/14.56 GiB)`. Every
   relaunch needs a full sweep of `nvidia-smi --query-compute-apps=pid`, then a check that free
@@ -81,9 +83,9 @@ Two ways to finish this, in increasing order of fidelity:
 
 1. **Swap the PD transport to `local_cpu`.** KV still crosses prefill → decode, via host memory
    instead of NIXL. More reliable on a single node and would light up `hit tokens`, proving the
-   handoff — just not "over NIXL". Cheapest way to close the loop on the mechanism.
+   handoff, just not "over NIXL". Cheapest way to close the loop on the mechanism.
 2. **Deploy across two nodes** (two Modal GPU functions or RunPod boxes) so `pd_peer_host` is a real
-   remote — the configuration LMCache actually tests. Everything established here carries over
+   remote, the configuration LMCache actually tests. Everything established here carries over
    unchanged: the migrated schema, `save_unfull_chunk`, listener-before-dialer ordering, matched
    `PYTHONHASHSEED`, the >1-chunk prompt requirement.
 
