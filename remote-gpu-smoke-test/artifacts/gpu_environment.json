@@ -1,0 +1,7 @@
+{
+  "compute_capability": "8.9",
+  "driver_version": "580.95.05",
+  "gpu_name": "NVIDIA L4",
+  "gpu_visible": true,
+  "memory_mib": 23034
+}
