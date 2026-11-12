@@ -14,6 +14,10 @@ numpy = "^2.5.1"
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0.0"
 
+[tool.poetry.group.security.dependencies]
+filelock = ">=4.2.1"
+setuptools = ">=84.1.0"
+
 [tool.pytest.ini_options]
 # modules import each other as `shared.*` / `vllm_replica.*`, so the package
 # directory itself is the import root
