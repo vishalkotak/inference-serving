@@ -12,7 +12,7 @@ numpy = "^2.5.1"
 
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.3.0"
+pytest = "^9.0.0"
 
 [tool.pytest.ini_options]
 # modules import each other as `shared.*` / `vllm_replica.*`, so the package
