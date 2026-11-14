@@ -1,4 +1,4 @@
-# gpu-inference-systems
+# gpu-execution
 
 Notebooks working through how GPU inference actually executes, run on
 remote NVIDIA hardware from a Mac using [Modal](https://modal.com).

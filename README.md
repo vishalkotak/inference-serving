@@ -1,12 +1,13 @@
 # inference-serving
 
-How LLM serving engines get their speed, rebuilt and measured.
+How LLM inference runs on GPUs and how serving engines make it fast, rebuilt and measured.
 
 | Path | |
 |---|---|
 | [inference-comparison](inference-comparison/) | vLLM's paged KV cache and prefix cache from scratch, tested against a dense reference. |
 | [bench](bench/) | Concurrency load tester. |
 | [disagg-prefill-decode](disagg-prefill-decode/) | vLLM + LMCache prefill/decode split across two GPUs. |
+| [gpu-execution](gpu-execution/) | CUDA execution model, streams and overlap, measured on remote NVIDIA GPUs. |
 
 Results
 - [Batching knee](results/d1-load-test.md): Llama 3.1 8B on M4 Pro. Throughput flat past 4 concurrent requests while latency doubles.
