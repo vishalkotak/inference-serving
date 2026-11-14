@@ -1,0 +1,17 @@
+# Jupyter
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Modal credentials
+.modal.toml
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
